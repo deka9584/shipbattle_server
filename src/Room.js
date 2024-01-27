@@ -230,7 +230,6 @@ class Room {
 
             if (player) {
                 const data = {
-                    allShipsPlaced: player.ready,
                     isYourTurn: this.#turn === i,
                     yourShips: player.ships,
                     room: roomData,
