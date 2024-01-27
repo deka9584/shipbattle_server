@@ -4,6 +4,7 @@ class Room {
     #maxShipCount = 5;
     #turn = 0;
     #gameOver = false;
+    #winnerName;
 
     get roomId () {
         return this.#roomId;
@@ -41,20 +42,51 @@ class Room {
         this.#sendUpdate();
     }
 
+    addShip (wsClient, pos) {
+        const player = this.#players.find(p => p && p.wsClient == wsClient);
+        const playerShipCount = player.ships ? player.ships.length : 0;
+
+        if (player && playerShipCount < this.#maxShipCount && this.isFull()) {
+            const width = player.actualShip.width;
+            const height = player.actualShip.height
+            const x = pos.x;
+            const y = pos.y;
+            const isInGrid = x >= 0 && x + width - 1 <= 9 && y >= 0 && y + height - 1 <= 9;
+            const hasFreeSpace = !player.ships.some(s =>
+                (x + width - 1 >= s.x && x <= s.x + s.width - 1) &&
+                (y + height - 1 >= s.y && y <= s.y + s.height - 1)
+            );
+
+            if (isInGrid && hasFreeSpace) {
+                const ship = {width, height, x, y };
+
+                ship.area = width * height;
+                ship.hitCount = 0;
+                ship.destroyed = false;
+    
+                player.ships.push(ship);
+                this.#prependNewShip(player);
+                this.#sendUpdate();
+            }
+        }
+    }
+
     addShot (wsClient, pos) {
         const player = this.#players.find(p => p && p.wsClient == wsClient);
 
         if (player === this.#players[this.#turn]) {
             const x = pos.x;
             const y = pos.y;
+            const isInGrid = x >= 0 && x <= 9 && y >= 0 && y <= 9;
+            const isFreeCell = !player.shots.some(s => s.x === x && s.y === y);
 
-            if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {
-                if (!player.shots.find(s => s.x === x && s.y === y)) {
-                    const shot = { x, y };
-                    player.shots.push(shot);
-                    shot.hit = this.#checkHit(this.#turn ? 0 : 1, x, y);
-                    this.#changeTurn();
-                }
+            if (isInGrid && isFreeCell) {
+                const shot = { x, y };
+
+                shot.hit = this.#checkHit(this.#turn ? 0 : 1, x, y);
+
+                player.shots.push(shot);
+                this.#changeTurn();
             }
         }
     }
@@ -79,34 +111,8 @@ class Room {
         return this.#players[0]?.ready && this.#players[1]?.ready;
     }
 
-    placeShip (wsClient, pos) {
-        const player = this.#players.find(p => p && p.wsClient == wsClient);
-        const playerShipCount = player.ships ? player.ships.length : 0;
-
-        if (player && playerShipCount < this.#maxShipCount) {
-            const width = player.actualShip.width;
-            const height = player.actualShip.height
-            const x = pos.x;
-            const y = pos.y;
-
-            if (x >= 0 && x + width - 1 <= 9 && y >= 0 && y + height - 1 <= 9) {
-                if (!player.ships.find(s => s.x === x && s.y === y)) {
-                    const ship = {width, height, x, y };
-
-                    ship.area = width * height;
-                    ship.hitCount = 0;
-                    ship.destroyed = false;
-    
-                    player.ships.push(ship);
-                    this.#prependNewShip(player);
-                    this.#sendUpdate();
-                }
-            }
-        }
-    }
-
     removePlayer (index) {
-        if (this.isInGame()) {
+        if (this.isInGame() && !this.#gameOver) {
             this.#winPlayer(index ? 0 : 1);
         }
 
@@ -126,14 +132,12 @@ class Room {
         if (player && player.ships) {
             player.ships.forEach(ship => {
                 if (x >= ship.x && x < ship.x + ship.width && y >= ship.y && y < ship.y + ship.height) {
+                    hit = true;
                     ship.hitCount++;
-                    console.log("Shit hit:", ship);
                     
                     if (ship.hitCount >= ship.area) {
                         this.#destroyShip(playerIndex, ship);
                     }
-
-                    hit = true;
                 }
             });
         }
@@ -183,7 +187,23 @@ class Room {
         this.#gameOver = true;
 
         if (player) {
-            player.win = true;
+            this.#winnerName = player.name;
+            this.#sendGameOver();
+        }
+    }
+
+    #sendGameOver () {
+        const data = {
+            winner: this.#winnerName,
+            type: "game-over"
+        }
+
+        if (this.#players[0]) {
+            this.#sendDataToClient(this.#players[0].wsClient, data);
+        }
+
+        if (this.#players[1]) {
+            this.#sendDataToClient(this.#players[1].wsClient, data);
         }
     }
 
@@ -215,8 +235,7 @@ class Room {
                     yourShips: player.ships,
                     room: roomData,
                     ship: player.actualShip,
-                    type: "room-update",
-                    win: player.win,
+                    type: "room-update"
                 }
 
                 this.#sendDataToClient(player.wsClient, data);
@@ -225,7 +244,7 @@ class Room {
     }
 
     #sendDataToClient (wsClient, data) {
-        if (wsClient.readyState == wsClient.OPEN) {
+        if (wsClient.readyState === 1) {
             wsClient.send(JSON.stringify(data));
         }
     }

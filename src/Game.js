@@ -21,7 +21,7 @@ class Game {
     
         this.#roomMap.set(roomId, room);
         console.log(res);
-        wsClient.send(JSON.stringify(res));
+        this.#sendToPlayer(wsClient, res);
     }
 
     signoutPlayer (wsClient) {
@@ -82,7 +82,7 @@ class Game {
     placeShip (wsClient, roomId, pos) {
         if (this.#roomMap.has(roomId)) {
             const room = this.#roomMap.get(roomId);
-            room.placeShip(wsClient, pos);
+            room.addShip(wsClient, pos);
         }
     }
 
@@ -95,7 +95,7 @@ class Game {
     }
 
     #sendJoinError (wsClient, message) {
-        if (wsClient.readyState == wsClient.OPEN) {
+        if (wsClient.readyState === 1) {
             wsClient.send(JSON.stringify({
                 type: "room-error",
                 message,
@@ -104,7 +104,9 @@ class Game {
     }
 
     #sendToPlayer (wsClient, data) {
-        wsClient.send(JSON.stringify(data));
+        if (wsClient.readyState === 1) {
+            wsClient.send(JSON.stringify(data));
+        }
     }
 }
 
