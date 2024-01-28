@@ -1,9 +1,10 @@
 class Room {
-    #roomId;
-    #players = [];
-    #maxShipCount = 5;
-    #turn = 0;
     #gameOver = false;
+    #gridSize = 10;
+    #maxShipCount = 5;
+    #players = [];
+    #roomId;
+    #turn = 0;
     #winnerName;
 
     get roomId () {
@@ -18,8 +19,13 @@ class Room {
         return this.#gameOver;
     }
 
-    constructor (roomId) {
+    constructor (roomId, options = null) {
         this.#roomId = roomId;
+
+        if (options) {
+            this.#gridSize = options.gridSize;
+            this.#maxShipCount = options.maxShipCount;
+        }
     }
 
     addPlayer (wsClient, name) {
@@ -44,14 +50,14 @@ class Room {
 
     addShip (wsClient, pos) {
         const player = this.#players.find(p => p && p.wsClient == wsClient);
-        const playerShipCount = player.ships ? player.ships.length : 0;
+        const playerShipCount = player.ships?.length ?? 0;
 
         if (player && playerShipCount < this.#maxShipCount && this.isFull()) {
             const width = player.actualShip.width;
             const height = player.actualShip.height
             const x = pos.x;
             const y = pos.y;
-            const isInGrid = x >= 0 && x + width - 1 <= 9 && y >= 0 && y + height - 1 <= 9;
+            const isInGrid = x >= 0 && x + width <= this.#gridSize && y >= 0 && y + height <= this.#gridSize;
             const hasFreeSpace = !player.ships.some(s =>
                 (x + width - 1 >= s.x && x <= s.x + s.width - 1) &&
                 (y + height - 1 >= s.y && y <= s.y + s.height - 1)
@@ -77,7 +83,7 @@ class Room {
         if (player === this.#players[this.#turn]) {
             const x = pos.x;
             const y = pos.y;
-            const isInGrid = x >= 0 && x <= 9 && y >= 0 && y <= 9;
+            const isInGrid = x >= 0 && x <= this.#gridSize && y >= 0 && y <= this.#gridSize;
             const isFreeCell = !player.shots.some(s => s.x === x && s.y === y);
 
             if (isInGrid && isFreeCell) {
@@ -159,7 +165,7 @@ class Room {
     }
 
     #prependNewShip (player) {
-        const shipCount = player.ships ? player.ships.length : 0;
+        const shipCount = player.ships?.length ?? 0;
 
         switch (shipCount) {
             case 0:
@@ -182,16 +188,6 @@ class Room {
         player.ready = shipCount == this.#maxShipCount
     }
 
-    #winPlayer (index) {
-        const player = this.#players[index];
-        this.#gameOver = true;
-
-        if (player) {
-            this.#winnerName = player.name;
-            this.#sendGameOver();
-        }
-    }
-
     #sendGameOver () {
         const data = {
             winner: this.#winnerName,
@@ -210,19 +206,20 @@ class Room {
     #sendUpdate () {
         const roomData = {
             gameOver: this.#gameOver,
+            gridSize: this.#gridSize,
             roomId: this.#roomId,
-                players: [
-                    {
-                        name: this.#players[0]?.name,
-                        shots: this.#players[0]?.shots,
-                        ready: this.#players[0]?.ready
-                    },
-                    {
-                        name: this.#players[1]?.name,
-                        shots: this.#players[1]?.shots,
-                        ready: this.#players[1]?.ready
-                    }
-                ],
+            players: [
+                {
+                    name: this.#players[0]?.name,
+                    shots: this.#players[0]?.shots,
+                    ready: this.#players[0]?.ready
+                },
+                {
+                    name: this.#players[1]?.name,
+                    shots: this.#players[1]?.shots,
+                    ready: this.#players[1]?.ready
+                }
+            ],
         };
 
         for (let i = 0; i < 2; i++) {
@@ -243,8 +240,18 @@ class Room {
     }
 
     #sendDataToClient (wsClient, data) {
-        if (wsClient.readyState === 1) {
+        if (wsClient?.readyState === 1) {
             wsClient.send(JSON.stringify(data));
+        }
+    }
+
+    #winPlayer (index) {
+        const player = this.#players[index];
+        this.#gameOver = true;
+
+        if (player) {
+            this.#winnerName = player.name;
+            this.#sendGameOver();
         }
     }
 }

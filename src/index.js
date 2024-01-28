@@ -13,6 +13,11 @@ wss.on("connection", wsClient => {
     wsClient.on("close", () => {
         game.signoutPlayer(wsClient);
     });
+
+    wsClient.on("error", error => {
+        game.signoutPlayer(wsClient);
+        console.error("WebSocket error:", error.message);
+    });
 });
 
 const messageHandler = (message, wsClient) => {

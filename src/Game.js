@@ -11,8 +11,13 @@ class Game {
     }
 
     createRoom (wsClient) {
+        const options = {
+            gridSize: 10,
+            maxShipCount: 5,
+        };
+
         const roomId = this.#generateRoomId();
-        const room = new Room(roomId);
+        const room = new Room(roomId, options);
     
         const res = {
             type: "room-created",
@@ -21,7 +26,7 @@ class Game {
     
         this.#roomMap.set(roomId, room);
         console.log(res);
-        this.#sendToPlayer(wsClient, res);
+        this.#sendToClient(wsClient, res);
     }
 
     signoutPlayer (wsClient) {
@@ -44,7 +49,7 @@ class Game {
             console.log("Removed room:", roomToRemove)
         }
 
-        if (wsClient.readyState == wsClient.OPEN) {
+        if (wsClient?.readyState == wsClient.OPEN) {
             wsClient.send(JSON.stringify({
                 type: "signout",
                 message: "Signed out",
@@ -71,7 +76,7 @@ class Game {
         }
 
         room.addPlayer(wsClient, name);
-        this.#sendToPlayer(wsClient, {
+        this.#sendToClient(wsClient, {
             type: "signin",
             roomId,
         });
@@ -103,8 +108,8 @@ class Game {
         }
     }
 
-    #sendToPlayer (wsClient, data) {
-        if (wsClient.readyState === 1) {
+    #sendToClient (wsClient, data) {
+        if (wsClient?.readyState === 1) {
             wsClient.send(JSON.stringify(data));
         }
     }
