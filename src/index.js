@@ -23,7 +23,7 @@ wss.on("connection", wsClient => {
 const messageHandler = (message, wsClient) => {
     switch (message.type) {
         case "add-shot":
-            game.addShot(wsClient, message.roomId, message.pos);
+            game.addShot(wsClient, message.pos);
             break;
         case "create-room":
             game.createRoom(wsClient);
@@ -32,7 +32,7 @@ const messageHandler = (message, wsClient) => {
             game.enterRoom(wsClient, message.playerName, message.roomId);
             break;
         case "place-ship":
-            game.placeShip(wsClient, message.roomId, message.pos);
+            game.addShip(wsClient, message.pos);
             break;
         case "quit-room":
             game.signoutPlayer(wsClient);

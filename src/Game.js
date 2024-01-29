@@ -3,9 +3,16 @@ import Room from "./Room.js";
 class Game {
     #roomMap = new Map();
 
-    addShot (wsClient, roomId, pos) {
-        if (this.#roomMap.has(roomId)) {
-            const room = this.#roomMap.get(roomId);
+    addShip (wsClient, pos) {
+        if (this.#roomMap.has(wsClient.gameRoom)) {
+            const room = this.#roomMap.get(wsClient.gameRoom);
+            room.addShip(wsClient, pos);
+        }
+    }
+
+    addShot (wsClient, pos) {
+        if (this.#roomMap.has(wsClient.gameRoom)) {
+            const room = this.#roomMap.get(wsClient.gameRoom);
             room.addShot(wsClient, pos);
         }
     }
@@ -30,26 +37,24 @@ class Game {
     }
 
     signoutPlayer (wsClient) {
-        let roomToRemove;
+        const roomId = wsClient.gameRoom;
 
-        this.#roomMap.forEach(room => {
+        if (roomId && this.#roomMap.has(roomId)) {
+            const room = this.#roomMap.get(roomId);
             const index = room.getPlayerIndex(wsClient);
 
             if (index > -1) {
                 room.removePlayer(index);
-
-                if (room.isEmpty()) {
-                    roomToRemove = room.roomId;
-                }
+                wsClient.playerRoom = null;
             }
-        });
 
-        if (roomToRemove) {
-            this.#roomMap.delete(roomToRemove);
-            console.log("Removed room:", roomToRemove)
+            if (room.isEmpty()) {
+                this.#roomMap.delete(roomId);
+                console.log("Removed room:", roomId);
+            }
         }
 
-        if (wsClient?.readyState == wsClient.OPEN) {
+        if (wsClient?.readyState === 1) {
             wsClient.send(JSON.stringify({
                 type: "signout",
                 message: "Signed out",
@@ -75,6 +80,7 @@ class Game {
             return;
         }
 
+        wsClient.gameRoom = roomId;
         room.addPlayer(wsClient, name);
         this.#sendToClient(wsClient, {
             type: "signin",
@@ -82,13 +88,6 @@ class Game {
         });
 
         console.log(room);
-    }
-
-    placeShip (wsClient, roomId, pos) {
-        if (this.#roomMap.has(roomId)) {
-            const room = this.#roomMap.get(roomId);
-            room.addShip(wsClient, pos);
-        }
     }
 
     #generateRoomId () {
