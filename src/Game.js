@@ -30,6 +30,9 @@ class Game {
             type: "room-created",
             roomId: room.roomId,
         };
+
+        room.addListener("ship-destroyed", this.#shipDestroyedHandler.bind(this));
+        room.addListener("game-over", this.#gameOverHandler.bind(this))
     
         this.#roomMap.set(roomId, room);
         console.log(res);
@@ -49,6 +52,8 @@ class Game {
             }
 
             if (room.isEmpty()) {
+                room.removeAllListeners("ship-destroyed");
+                room.removeAllListeners("game-over");
                 this.#roomMap.delete(roomId);
                 console.log("Removed room:", roomId);
             }
@@ -86,8 +91,12 @@ class Game {
             type: "signin",
             roomId,
         });
+    }
 
-        console.log(room);
+    #gameOverHandler (event) {
+        const winner = event.winner;
+        const roomId = event.roomId;
+        console.log(`${winner} won the Battle`, `Room ${roomId}`);
     }
 
     #generateRoomId () {
@@ -111,6 +120,13 @@ class Game {
         if (wsClient?.readyState === 1) {
             wsClient.send(JSON.stringify(data));
         }
+    }
+
+    #shipDestroyedHandler (event) {
+        const roomId = event.roomId;
+        const shipOwner = event.shipOwner;
+        const shipsLost = event.shipsLost;
+        console.log(`${shipOwner} losed a ship. ${shipsLost} remaining.`, `Room: ${roomId}`);
     }
 }
 

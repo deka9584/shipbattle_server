@@ -1,4 +1,6 @@
-class Room {
+import { EventEmitter } from "events";
+
+class Room extends EventEmitter {
     #gameOver = false;
     #gridSize = 10;
     #maxShipCount = 5;
@@ -20,6 +22,8 @@ class Room {
     }
 
     constructor (roomId, options = null) {
+        super();
+
         this.#roomId = roomId;
 
         if (options) {
@@ -64,7 +68,7 @@ class Room {
             );
 
             if (isInGrid && hasFreeSpace) {
-                const ship = {width, height, x, y };
+                const ship = { width, height, x, y };
 
                 ship.area = width * height;
                 ship.hitCount = 0;
@@ -119,7 +123,7 @@ class Room {
 
     removePlayer (index) {
         if (this.isInGame() && !this.#gameOver) {
-            this.#winPlayer(index ? 0 : 1);
+            this.#setWinner(index ? 0 : 1);
         }
 
         this.#players[index] = null;
@@ -158,8 +162,14 @@ class Room {
             ship.destroyed = true;
             player.shipsLost++;
 
+            this.emit("ship-destroyed", {
+                roomId: this.#roomId,
+                shipOwner: player.name,
+                shipsLost: player.shipsLost,
+            });
+
             if (player.shipsLost >= player.ships.length) {
-                this.#winPlayer(playerIndex ? 0 : 1);
+                this.#setWinner(playerIndex ? 0 : 1);
             }
         }
     }
@@ -191,7 +201,8 @@ class Room {
     #sendGameOver () {
         const data = {
             winner: this.#winnerName,
-            type: "game-over"
+            roomId: this.#roomId,
+            type: "game-over",
         }
 
         if (this.#players[0]) {
@@ -201,6 +212,8 @@ class Room {
         if (this.#players[1]) {
             this.#sendDataToClient(this.#players[1].wsClient, data);
         }
+
+        this.emit("game-over", data);
     }
 
     #sendUpdate () {
@@ -245,7 +258,7 @@ class Room {
         }
     }
 
-    #winPlayer (index) {
+    #setWinner (index) {
         const player = this.#players[index];
         this.#gameOver = true;
 
