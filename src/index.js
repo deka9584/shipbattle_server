@@ -21,12 +21,17 @@ wss.on("connection", wsClient => {
 });
 
 const messageHandler = (message, wsClient) => {
+    if (message.source === "bot" && message.type === "create-room") {
+        game.newRoomFromBot(wsClient, message.chatId);         
+        return;   
+    }
+
     switch (message.type) {
         case "add-shot":
             game.addShot(wsClient, message.pos);
             break;
         case "create-room":
-            game.createRoom(wsClient);
+            game.newRoomFromBrowser(wsClient);
             break;
         case "enter-room":
             game.enterRoom(wsClient, message.playerName, message.roomId);

@@ -1,13 +1,18 @@
 import { EventEmitter } from "events";
 
 class Room extends EventEmitter {
-    #gameOver = false;
+    #chatId;
+    #isGameOver = false;
     #gridSize = 10;
     #maxShipCount = 5;
     #players = [];
     #roomId;
     #turn = 0;
     #winnerName;
+
+    get chatId () {
+        return this.#chatId;
+    }
 
     get roomId () {
         return this.#roomId;
@@ -18,7 +23,7 @@ class Room extends EventEmitter {
     }
 
     get gameOver () {
-        return this.#gameOver;
+        return this.#isGameOver;
     }
 
     constructor (roomId, options = null) {
@@ -27,6 +32,7 @@ class Room extends EventEmitter {
         this.#roomId = roomId;
 
         if (options) {
+            this.#chatId = options.chatId;
             this.#gridSize = options.gridSize;
             this.#maxShipCount = options.maxShipCount;
         }
@@ -122,8 +128,8 @@ class Room extends EventEmitter {
     }
 
     removePlayer (index) {
-        if (this.isInGame() && !this.#gameOver) {
-            this.#setWinner(index ? 0 : 1);
+        if (this.isInGame() && !this.#isGameOver) {
+            this.#gameOver(index ? 0 : 1);
         }
 
         this.#players[index] = null;
@@ -162,15 +168,43 @@ class Room extends EventEmitter {
             ship.destroyed = true;
             player.shipsLost++;
 
-            this.emit("ship-destroyed", {
-                roomId: this.#roomId,
-                shipOwner: player.name,
-                shipsLost: player.shipsLost,
-            });
+            this.#dispatchShipDestroyedEvent(player.name, player.ships.length - player.shipsLost);
 
             if (player.shipsLost >= player.ships.length) {
-                this.#setWinner(playerIndex ? 0 : 1);
+                this.#gameOver(playerIndex ? 0 : 1);
             }
+        }
+    }
+
+    #dispatchGameOverEvent () {
+        const data = {
+            chatId: this.#chatId,
+            roomId: this.#roomId,
+            winner: this.#winnerName,
+        }
+
+        this.emit("game-over", data);
+    }
+
+    #dispatchShipDestroyedEvent (shipOwner, remainingShips) {
+        const data = {
+            chatId: this.#chatId,
+            roomId: this.#roomId,
+            shipOwner,
+            remainingShips,
+        };
+
+        this.emit("ship-destroyed", data);
+    }
+
+    #gameOver (winnerIndex) {
+        const player = this.#players[winnerIndex];
+        this.#isGameOver = true;
+
+        if (player) {
+            this.#winnerName = player.name;
+            this.#sendGameOver();
+            this.#dispatchGameOverEvent();
         }
     }
 
@@ -212,13 +246,11 @@ class Room extends EventEmitter {
         if (this.#players[1]) {
             this.#sendDataToClient(this.#players[1].wsClient, data);
         }
-
-        this.emit("game-over", data);
     }
 
     #sendUpdate () {
         const roomData = {
-            gameOver: this.#gameOver,
+            gameOver: this.#isGameOver,
             gridSize: this.#gridSize,
             roomId: this.#roomId,
             players: [
@@ -255,16 +287,6 @@ class Room extends EventEmitter {
     #sendDataToClient (wsClient, data) {
         if (wsClient?.readyState === 1) {
             wsClient.send(JSON.stringify(data));
-        }
-    }
-
-    #setWinner (index) {
-        const player = this.#players[index];
-        this.#gameOver = true;
-
-        if (player) {
-            this.#winnerName = player.name;
-            this.#sendGameOver();
         }
     }
 }

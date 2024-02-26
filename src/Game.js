@@ -2,6 +2,7 @@ import Room from "./Room.js";
 
 class Game {
     #roomMap = new Map();
+    #tempChatRooms = new Map();
 
     addShip (wsClient, pos) {
         if (this.#roomMap.has(wsClient.gameRoom)) {
@@ -17,30 +18,47 @@ class Game {
         }
     }
 
-    createRoom (wsClient) {
+    newRoomFromBrowser (wsClient) {
         const options = {
             gridSize: 10,
             maxShipCount: 5,
         };
 
-        const roomId = this.#generateRoomId();
-        const room = new Room(roomId, options);
+        const tempRoomId = wsClient.tempRoom;
+        const roomId = this.#roomMap.has(tempRoomId) ? tempRoomId : this.#createRoom(options);
     
         const res = {
             type: "room-created",
-            roomId: room.roomId,
+            roomId,
+        };
+        
+        wsClient.tempRoom = roomId;
+        this.#sendToClient(wsClient, res);
+    }
+
+    newRoomFromBot (wsClient, chatId) {
+        const options = {
+            botClient: wsClient,
+            chatId,
+            gridSize: 10,
+            maxShipCount: 5,
         };
 
-        room.addListener("ship-destroyed", this.#shipDestroyedHandler.bind(this));
-        room.addListener("game-over", this.#gameOverHandler.bind(this))
-    
-        this.#roomMap.set(roomId, room);
-        console.log(res);
+        const roomId = this.#tempChatRooms.get(chatId) ?? this.#createRoom(options);
+
+        const res = {
+            type: "room-created",
+            roomId,
+            chatId,
+        };
+        
+        this.#tempChatRooms.set(chatId, roomId);
         this.#sendToClient(wsClient, res);
     }
 
     signoutPlayer (wsClient) {
         const roomId = wsClient.gameRoom;
+        const tempRoomId = wsClient.tempRoom;
 
         if (roomId && this.#roomMap.has(roomId)) {
             const room = this.#roomMap.get(roomId);
@@ -52,11 +70,13 @@ class Game {
             }
 
             if (room.isEmpty()) {
-                room.removeAllListeners("ship-destroyed");
-                room.removeAllListeners("game-over");
-                this.#roomMap.delete(roomId);
-                console.log("Removed room:", roomId);
+                this.#deleteRoom(roomId);
             }
+        }
+
+        if (tempRoomId && this.#roomMap.has(tempRoomId)) {
+            console.log("[SIGNOUT] Removed unused player room:", tempRoomId);
+            this.#deleteRoom(tempRoomId);
         }
 
         if (wsClient?.readyState === 1) {
@@ -85,18 +105,52 @@ class Game {
             return;
         }
 
-        wsClient.gameRoom = roomId;
-        room.addPlayer(wsClient, name);
-        this.#sendToClient(wsClient, {
+        const res = {
             type: "signin",
             roomId,
-        });
+        };
+
+        const tempRoomId = wsClient.tempRoom;
+
+        if (tempRoomId && tempRoomId !== roomId) {
+            this.#deleteRoom(tempRoomId);
+            console.log("[JOIN] Client joined different room. Removed:", tempRoomId);
+        }
+
+        if (room.chatId && this.#tempChatRooms.has(room.chatId)) {
+            this.#tempChatRooms.delete(room.chatId);
+        }
+
+        wsClient.tempRoom = null;
+        wsClient.gameRoom = roomId;
+        room.addPlayer(wsClient, name);
+        this.#sendToClient(wsClient, res);
+    }
+
+    #createRoom (options) {
+        const roomId = this.#generateRoomId();
+        const room = new Room(roomId, options);
+        this.#roomMap.set(roomId, room);
+
+        room.addListener("ship-destroyed", this.#shipDestroyedHandler.bind(this));
+        room.addListener("game-over", this.#gameOverHandler.bind(this));
+
+        console.log("Created room:", roomId);
+        return roomId;
+    }
+
+    #deleteRoom (roomId) {
+        const room = this.#roomMap.get(roomId);
+
+        room.removeAllListeners("ship-destroyed");
+        room.removeAllListeners("game-over");
+
+        this.#roomMap.delete(roomId);
+        console.log("Removed room:", roomId);
     }
 
     #gameOverHandler (event) {
-        const winner = event.winner;
-        const roomId = event.roomId;
-        console.log(`${winner} won the Battle`, `Room ${roomId}`);
+        console.log(`${event.winner} won the Battle`, `Room ${event.roomId}`);
     }
 
     #generateRoomId () {
@@ -123,10 +177,7 @@ class Game {
     }
 
     #shipDestroyedHandler (event) {
-        const roomId = event.roomId;
-        const shipOwner = event.shipOwner;
-        const shipsLost = event.shipsLost;
-        console.log(`${shipOwner} losed a ship. ${shipsLost} remaining.`, `Room: ${roomId}`);
+        console.log(event.roomId, `${event.shipOwner} losed a ship. ${event.remainingShips} remaining.`);
     }
 }
 
