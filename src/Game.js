@@ -12,9 +12,10 @@ class Game {
     }
 
     addShot (wsClient, pos) {
-        if (this.#roomMap.has(wsClient.gameRoom)) {
-            const room = this.#roomMap.get(wsClient.gameRoom);
-            room.addShot(wsClient, pos);
+        const roomId = wsClient.gameRoom;
+
+        if (this.#roomMap.has(roomId)) {
+            this.#roomMap.get(roomId).addShot(wsClient, pos);
         }
     }
 
@@ -24,16 +25,17 @@ class Game {
             maxShipCount: 5,
         };
 
-        const tempRoomId = wsClient.tempRoom;
-        const roomId = this.#roomMap.has(tempRoomId) ? tempRoomId : this.#createRoom(options);
-    
-        const res = {
+        let roomId = wsClient.tempRoom;
+
+        if (!roomId || !this.#roomMap.has(roomId)) {
+            roomId = this.#createRoom(options);
+            wsClient.tempRoom = roomId;
+        }
+        
+        wsClient.send(JSON.stringify({
             type: "room-created",
             roomId,
-        };
-        
-        wsClient.tempRoom = roomId;
-        this.#sendToClient(wsClient, res);
+        }));
     }
 
     newRoomFromBot (wsClient, chatId) {
@@ -44,16 +46,18 @@ class Game {
             maxShipCount: 5,
         };
 
-        const roomId = this.#tempChatRooms.get(chatId) ?? this.#createRoom(options);
-
-        const res = {
+        let roomId = this.#tempChatRooms.get(chatId);
+        
+        if (!roomId) {
+            roomId = this.#createRoom(options);
+            this.#tempChatRooms.set(chatId, roomId);
+        }
+        
+        wsClient.send(JSON.stringify({
             type: "room-created",
             roomId,
             chatId,
-        };
-        
-        this.#tempChatRooms.set(chatId, roomId);
-        this.#sendToClient(wsClient, res);
+        }));
     }
 
     signoutPlayer (wsClient) {
@@ -88,6 +92,11 @@ class Game {
     }
 
     enterRoom (wsClient, name, roomId) {
+        if (wsClient.readyState !== 1) {
+            console.error("WS not open", wsClient);
+            return;
+        }
+
         if (!name || `${name}`.includes(" ")) {
             this.#sendJoinError(wsClient, "Invalid nickname");
             return;
@@ -105,11 +114,6 @@ class Game {
             return;
         }
 
-        const res = {
-            type: "signin",
-            roomId,
-        };
-
         const tempRoomId = wsClient.tempRoom;
 
         if (tempRoomId && tempRoomId !== roomId) {
@@ -124,17 +128,21 @@ class Game {
         wsClient.tempRoom = null;
         wsClient.gameRoom = roomId;
         room.addPlayer(wsClient, name);
-        this.#sendToClient(wsClient, res);
+        
+        wsClient.send(JSON.stringify({
+            type: "signin",
+            roomId,
+        }));
     }
 
     #createRoom (options) {
         const roomId = this.#generateRoomId();
         const room = new Room(roomId, options);
-        this.#roomMap.set(roomId, room);
-
+        
         room.addListener("ship-destroyed", this.#shipDestroyedHandler.bind(this));
         room.addListener("game-over", this.#gameOverHandler.bind(this));
-
+        
+        this.#roomMap.set(roomId, room);
         console.log("Created room:", roomId);
         return roomId;
     }
@@ -155,24 +163,23 @@ class Game {
 
     #generateRoomId () {
         let id;
+
         do {
             id = (Math.random() * 1_000_000_000).toString(36).replace(".", "");
-        }  while (this.#roomMap.has(id));
+        } while (this.#roomMap.has(id));
+        
         return id;
     }
 
     #sendJoinError (wsClient, message) {
-        if (wsClient.readyState === 1) {
+        try {
             wsClient.send(JSON.stringify({
                 type: "room-error",
                 message,
             }));
         }
-    }
-
-    #sendToClient (wsClient, data) {
-        if (wsClient?.readyState === 1) {
-            wsClient.send(JSON.stringify(data));
+        catch (error) {
+            console.error("Unable to send room-error message:", error);
         }
     }
 

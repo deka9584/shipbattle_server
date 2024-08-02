@@ -10,11 +10,15 @@ class Room extends EventEmitter {
     #player1;
     #player2;
     #roomId;
-    #turn = 0;
+    #turn = false;
     #winnerName;
 
     get chatId () {
         return this.#chatId;
+    }
+
+    get players () {
+        return [this.#player1, this.#player2];
     }
 
     get roomId () {
@@ -52,7 +56,7 @@ class Room extends EventEmitter {
     }
 
     addShip (wsClient, pos) {
-        const player = [this.#player1, this.#player2].find(p => p && p.wsClient === wsClient);
+        const player = this.getPlayerFromWS(wsClient);
 
         if (player && player.ships.length < this.#maxShipCount && this.isFull()) {
             const width = player.actualShip.width;
@@ -95,11 +99,11 @@ class Room extends EventEmitter {
     }
 
     getPlayerByName (name) {
-        return [this.#player1, this.#player2].find(p => p && p.name === name);
+        return this.players.find(p => p && p.name === name);
     }
 
     getPlayerFromWS (wsClient) {
-        return [this.#player1, this.#player2].find(p => p && p.wsClient === wsClient);
+        return this.players.find(p => p && p.wsClient === wsClient);
     }
 
     isEmpty () {
@@ -145,11 +149,6 @@ class Room extends EventEmitter {
     }
 
     #checkHit (player, x, y) {
-        if (!(player instanceof Player)) {
-            console.error("Invalid player instance");
-            return false;
-        }
-
         for (const ship of player.ships) {
             if (ship.isInArea(x, y)) {
                 ship.addHit();
@@ -244,13 +243,8 @@ class Room extends EventEmitter {
             type: "game-over",
         }
 
-        if (this.#player1) {
-            this.#sendDataToClient(this.#player1.wsClient, data);
-        }
-
-        if (this.#player2) {
-            this.#sendDataToClient(this.#player2.wsClient, data);
-        }
+        this.#player1?.send(data);
+        this.#player2?.send(data);
     }
 
     #sendUpdate () {
@@ -274,7 +268,7 @@ class Room extends EventEmitter {
 
         const playerTurn = this.#turn ? this.#player2 : this.#player1;
 
-        for (const player of [this.#player1, this.#player2]) {
+        for (const player of this.players) {
             if (!player) {
                 continue;
             }
@@ -289,13 +283,7 @@ class Room extends EventEmitter {
                 type: "room-update"
             }
     
-            this.#sendDataToClient(player.wsClient, data);
-        }
-    }
-
-    #sendDataToClient (wsClient, data) {
-        if (wsClient?.readyState === 1) {
-            wsClient.send(JSON.stringify(data));
+            player.send(data);
         }
     }
 }
