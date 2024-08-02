@@ -62,10 +62,10 @@ class Game {
 
         if (roomId && this.#roomMap.has(roomId)) {
             const room = this.#roomMap.get(roomId);
-            const index = room.getPlayerIndex(wsClient);
+            const player = room.getPlayerFromWS(wsClient);
 
-            if (index > -1) {
-                room.removePlayer(index);
+            if (player) {
+                room.removePlayer(player);
                 wsClient.playerRoom = null;
             }
 

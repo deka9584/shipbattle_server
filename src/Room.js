@@ -1,11 +1,14 @@
 import { EventEmitter } from "events";
+import Player from "./Player.js";
+import Ship from "./Ship.js";
 
 class Room extends EventEmitter {
     #chatId;
     #isGameOver = false;
     #gridSize = 10;
     #maxShipCount = 5;
-    #players = [];
+    #player1;
+    #player2;
     #roomId;
     #turn = 0;
     #winnerName;
@@ -16,10 +19,6 @@ class Room extends EventEmitter {
 
     get roomId () {
         return this.#roomId;
-    }
-
-    get players () {
-        return this.#players;
     }
 
     get gameOver () {
@@ -39,19 +38,13 @@ class Room extends EventEmitter {
     }
 
     addPlayer (wsClient, name) {
-        const player = {
-            wsClient,
-            name,
-            shots: [],
-            ships: [],
-            shipsLost: 0,
-        }
+        const player = new Player(wsClient, name);
 
-        if (!this.#players[0]) {
-            this.#players[0] = player;
+        if (!this.#player1) {
+            this.#player1 = player;
         }
         else {
-            this.#players[1] = player;
+            this.#player2 = player;
         }
 
         this.#prependNewShip(player);
@@ -59,10 +52,9 @@ class Room extends EventEmitter {
     }
 
     addShip (wsClient, pos) {
-        const player = this.#players.find(p => p && p.wsClient == wsClient);
-        const playerShipCount = player.ships?.length ?? 0;
+        const player = [this.#player1, this.#player2].find(p => p && p.wsClient === wsClient);
 
-        if (player && playerShipCount < this.#maxShipCount && this.isFull()) {
+        if (player && player.ships.length < this.#maxShipCount && this.isFull()) {
             const width = player.actualShip.width;
             const height = player.actualShip.height
             const x = pos.x;
@@ -74,11 +66,7 @@ class Room extends EventEmitter {
             );
 
             if (isInGrid && hasFreeSpace) {
-                const ship = { width, height, x, y };
-
-                ship.area = width * height;
-                ship.hitCount = 0;
-                ship.destroyed = false;
+                const ship = new Ship(width, height, x, y);
     
                 player.ships.push(ship);
                 this.#prependNewShip(player);
@@ -88,92 +76,93 @@ class Room extends EventEmitter {
     }
 
     addShot (wsClient, pos) {
-        const player = this.#players.find(p => p && p.wsClient == wsClient);
+        const player = this.#turn ? this.#player2 : this.#player1;
 
-        if (player === this.#players[this.#turn]) {
+        if (player && player.wsClient === wsClient) {
             const x = pos.x;
             const y = pos.y;
             const isInGrid = x >= 0 && x <= this.#gridSize && y >= 0 && y <= this.#gridSize;
             const isFreeCell = !player.shots.some(s => s.x === x && s.y === y);
 
             if (isInGrid && isFreeCell) {
-                const shot = { x, y };
+                const victim = player === this.#player1 ? this.#player2 : this.#player1;
+                const hit = this.#checkHit(victim, x, y);
 
-                shot.hit = this.#checkHit(this.#turn ? 0 : 1, x, y);
-
-                player.shots.push(shot);
+                player.shots.push({ x, y, hit });
                 this.#changeTurn();
             }
         }
     }
 
-    getPlayerIndex (wsClient) {
-        return this.#players.findIndex(p => p && p.wsClient == wsClient);
+    getPlayerByName (name) {
+        return [this.#player1, this.#player2].find(p => p && p.name === name);
     }
 
-    getPlayerByName (name) {
-        return this.#players.find(p => p && p.name === name);
+    getPlayerFromWS (wsClient) {
+        return [this.#player1, this.#player2].find(p => p && p.wsClient === wsClient);
     }
 
     isEmpty () {
-        return !this.#players[0] && !this.#players[1];
+        return !this.#player1 && !this.#player2;
     }
 
     isFull () {
-        return this.#players[0] && this.#players[1];
+        return this.#player1 && this.#player2;
     }
 
     isInGame () {
-        return this.#players[0]?.ready && this.#players[1]?.ready;
+        return this.#player1?.ready && this.#player2?.ready;
     }
 
-    removePlayer (index) {
+    removePlayer (player) {
+        const isP1 = player === this.#player1;
+        const isP2 = player === this.#player2;
+
         if (this.isInGame() && !this.#isGameOver) {
-            this.#gameOver(index ? 0 : 1);
+            if (isP1) {
+                this.#gameOver(this.#player2);
+            }
+
+            if (isP2) {
+                this.#gameOver(this.#player1);
+            }
         }
 
-        this.#players[index] = null;
+        if (isP1) {
+            this.#player1 = null;
+        }
+
+        if (isP2) {
+            this.#player2 = null;
+        }
+
         this.#sendUpdate();
     }
 
     #changeTurn () {
-        this.#turn = this.#turn ? 0 : 1;
-        this.#sendUpdate();
+        this.#turn = !this.#turn;
+        this.#sendUpdate(); 
     }
 
-    #checkHit (playerIndex, x, y) {
-        const player = this.#players[playerIndex];
-        let hit = false;
-
-        if (player && player.ships) {
-            player.ships.forEach(ship => {
-                if (x >= ship.x && x < ship.x + ship.width && y >= ship.y && y < ship.y + ship.height) {
-                    hit = true;
-                    ship.hitCount++;
-                    
-                    if (ship.hitCount >= ship.area) {
-                        this.#destroyShip(playerIndex, ship);
-                    }
-                }
-            });
+    #checkHit (player, x, y) {
+        if (!(player instanceof Player)) {
+            console.error("Invalid player instance");
+            return false;
         }
 
-        return hit;
-    }
+        for (const ship of player.ships) {
+            if (ship.isInArea(x, y)) {
+                ship.addHit();
 
-    #destroyShip (playerIndex, ship) {
-        const player = this.#players[playerIndex];
+                if (ship.destroyed) {
+                    this.#onShipDestroyed(player);
+                }
 
-        if (player) {
-            ship.destroyed = true;
-            player.shipsLost++;
-
-            this.#dispatchShipDestroyedEvent(player.name, player.ships.length - player.shipsLost);
-
-            if (player.shipsLost >= player.ships.length) {
-                this.#gameOver(playerIndex ? 0 : 1);
+                return true;
             }
         }
+
+        return false;
     }
 
     #dispatchGameOverEvent () {
@@ -197,8 +186,7 @@ class Room extends EventEmitter {
         this.emit("ship-destroyed", data);
     }
 
-    #gameOver (winnerIndex) {
-        const player = this.#players[winnerIndex];
+    #gameOver (player) {
         this.#isGameOver = true;
 
         if (player) {
@@ -208,28 +196,45 @@ class Room extends EventEmitter {
         }
     }
 
-    #prependNewShip (player) {
-        const shipCount = player.ships?.length ?? 0;
-
-        switch (shipCount) {
-            case 0:
-                player.actualShip = { width: 1, height: 2 };
-                break;
-            case 1:
-                player.actualShip = { width: 3, height: 1 };
-                break;
-            case 2:
-                player.actualShip = { width: 1, height: 4 };
-                break;
-            case 3:
-                player.actualShip = { width: 5, height: 1 };
-                break;
-            default:
-                player.actualShip = { width: 1, height: 1 };
-                break;
+    #onShipDestroyed (owner) {
+        if (owner) {
+            this.#dispatchShipDestroyedEvent(owner.name, owner.ships.length - owner.shipsLost);
+    
+            if (owner.shipsLost >= owner.ships.length) {
+                this.#gameOver(this.#turn ? this.#player2 : this.#player1);
+            }
         }
-        
-        player.ready = shipCount == this.#maxShipCount
+    }
+
+    #prependNewShip (player) {
+        if (player instanceof Player) {
+            const shipCount = player.ships.length;
+            let actualShip;
+    
+            switch (shipCount) {
+                case 0:
+                    actualShip = { width: 1, height: 2 };
+                    break;
+                case 1:
+                    actualShip = { width: 3, height: 1 };
+                    break;
+                case 2:
+                    actualShip = { width: 1, height: 4 };
+                    break;
+                case 3:
+                    actualShip = { width: 5, height: 1 };
+                    break;
+                default:
+                    actualShip = { width: 1, height: 1 };
+                    break;
+            }
+            
+            player.setActualShip(actualShip);
+
+            if (shipCount === this.#maxShipCount) {
+                player.setReady(true);
+            }
+        }
     }
 
     #sendGameOver () {
@@ -239,12 +244,12 @@ class Room extends EventEmitter {
             type: "game-over",
         }
 
-        if (this.#players[0]) {
-            this.#sendDataToClient(this.#players[0].wsClient, data);
+        if (this.#player1) {
+            this.#sendDataToClient(this.#player1.wsClient, data);
         }
 
-        if (this.#players[1]) {
-            this.#sendDataToClient(this.#players[1].wsClient, data);
+        if (this.#player2) {
+            this.#sendDataToClient(this.#player2.wsClient, data);
         }
     }
 
@@ -255,32 +260,36 @@ class Room extends EventEmitter {
             roomId: this.#roomId,
             players: [
                 {
-                    name: this.#players[0]?.name,
-                    shots: this.#players[0]?.shots,
-                    ready: this.#players[0]?.ready
+                    name: this.#player1?.name,
+                    shots: this.#player1?.shots,
+                    ready: this.#player1?.ready
                 },
                 {
-                    name: this.#players[1]?.name,
-                    shots: this.#players[1]?.shots,
-                    ready: this.#players[1]?.ready
+                    name: this.#player2?.name,
+                    shots: this.#player2?.shots,
+                    ready: this.#player2?.ready
                 }
             ],
         };
 
-        for (let i = 0; i < 2; i++) {
-            const player = this.#players[i];
+        const playerTurn = this.#turn ? this.#player2 : this.#player1;
 
-            if (player) {
-                const data = {
-                    isYourTurn: this.#turn === i,
-                    yourShips: player.ships,
-                    room: roomData,
-                    ship: player.actualShip,
-                    type: "room-update"
-                }
-
-                this.#sendDataToClient(player.wsClient, data);
+        for (const player of [this.#player1, this.#player2]) {
+            if (!player) {
+                continue;
             }
+            
+            const ships = player.ships.map(s => s.toObject());
+    
+            const data = {
+                isYourTurn: player === playerTurn,
+                yourShips: ships,
+                room: roomData,
+                ship: player.actualShip,
+                type: "room-update"
+            }
+    
+            this.#sendDataToClient(player.wsClient, data);
         }
     }
 
