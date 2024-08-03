@@ -4,23 +4,26 @@ import Game from "./Game.js";
 const wss = new WebServerSocket({ port: 8086 });
 const game = new Game();
 
-wss.on("connection", wsClient => {
-    wsClient.on("message", event => {
-        const message = JSON.parse(event);
-        messageHandler(message, wsClient);
+wss.on("connection", (wsClient) => {
+    wsClient.on("message", (rawData) => {
+        const message = parseMessage(rawData);
+
+        if (message !== null) {
+            handleMessage(message, wsClient);
+        }
     });
 
     wsClient.on("close", () => {
         game.signoutPlayer(wsClient);
     });
 
-    wsClient.on("error", error => {
+    wsClient.on("error", (error) => {
         game.signoutPlayer(wsClient);
         console.error("WebSocket error:", error.message);
     });
 });
 
-function messageHandler (message, wsClient) {
+function handleMessage (message, wsClient) {
     try {
         if (message.source === "bot" && message.type === "create-room") {
             game.newRoomFromBot(wsClient, message.chatId);         
@@ -49,4 +52,16 @@ function messageHandler (message, wsClient) {
         console.warn("Unable to handle message:", message);
         console.error("Error:", error);
     }
+}
+
+function parseMessage (rawData) {
+    try {
+        return JSON.parse(rawData);
+    }
+    catch (error) {
+        console.warn("Unable to parse raw data:", rawData);
+        console.error("Error:", error);
+    }
+
+    return null;
 }

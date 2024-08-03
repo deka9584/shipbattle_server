@@ -5,9 +5,10 @@ class Game {
     #tempChatRooms = new Map();
 
     addShip (wsClient, pos) {
-        if (this.#roomMap.has(wsClient.gameRoom)) {
-            const room = this.#roomMap.get(wsClient.gameRoom);
-            room.addShip(wsClient, pos);
+        const roomId = wsClient.gameRoom;
+
+        if (this.#roomMap.has(roomId)) {
+            this.#roomMap.get(roomId).addShip(wsClient, pos);
         }
     }
 
@@ -109,7 +110,7 @@ class Game {
             return;
         }
 
-        if (room.getPlayerByName(name)) {
+        if (room.getPlayerFromName(name)) {
             this.#sendJoinError(wsClient, "Your name is not available");
             return;
         }

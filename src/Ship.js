@@ -50,18 +50,18 @@ class Ship {
             this.#destroyed = true;
         }
     }
-
-    isInArea (x, y) {
-        return x >= this.#x && x < this.#x + this.#width && y >= this.#y && y < this.#y + this.#height;
-    }
-
-    toObject () {
+    
+    getRect () {
         return {
             x: this.#x,
             y: this.#y,
             width: this.#width,
             height: this.#height
         }
+    }
+
+    isInArea (x, y) {
+        return x >= this.#x && x < this.#x + this.#width && y >= this.#y && y < this.#y + this.#height;
     }
 }
 

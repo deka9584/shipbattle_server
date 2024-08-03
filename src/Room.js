@@ -59,8 +59,8 @@ class Room extends EventEmitter {
         const player = this.getPlayerFromWS(wsClient);
 
         if (player && player.ships.length < this.#maxShipCount && this.isFull()) {
-            const width = player.actualShip.width;
-            const height = player.actualShip.height
+            const width = player.shipCursor.width;
+            const height = player.shipCursor.height
             const x = pos.x;
             const y = pos.y;
             const isInGrid = x >= 0 && x + width <= this.#gridSize && y >= 0 && y + height <= this.#gridSize;
@@ -98,7 +98,7 @@ class Room extends EventEmitter {
         }
     }
 
-    getPlayerByName (name) {
+    getPlayerFromName (name) {
         return this.players.find(p => p && p.name === name);
     }
 
@@ -206,33 +206,31 @@ class Room extends EventEmitter {
     }
 
     #prependNewShip (player) {
-        if (player instanceof Player) {
-            const shipCount = player.ships.length;
-            let actualShip;
-    
-            switch (shipCount) {
-                case 0:
-                    actualShip = { width: 1, height: 2 };
-                    break;
-                case 1:
-                    actualShip = { width: 3, height: 1 };
-                    break;
-                case 2:
-                    actualShip = { width: 1, height: 4 };
-                    break;
-                case 3:
-                    actualShip = { width: 5, height: 1 };
-                    break;
-                default:
-                    actualShip = { width: 1, height: 1 };
-                    break;
-            }
-            
-            player.setActualShip(actualShip);
+        const shipCount = player.ships.length;
+        let shipCursor;
 
-            if (shipCount === this.#maxShipCount) {
-                player.setReady(true);
-            }
+        switch (shipCount) {
+            case 0:
+                shipCursor = { width: 1, height: 2 };
+                break;
+            case 1:
+                shipCursor = { width: 3, height: 1 };
+                break;
+            case 2:
+                shipCursor = { width: 1, height: 4 };
+                break;
+            case 3:
+                shipCursor = { width: 5, height: 1 };
+                break;
+            default:
+                shipCursor = { width: 1, height: 1 };
+                break;
+        }
+        
+        player.setShipCursor(shipCursor);
+
+        if (shipCount === this.#maxShipCount) {
+            player.setReady(true);
         }
     }
 
@@ -243,8 +241,9 @@ class Room extends EventEmitter {
             type: "game-over",
         }
 
-        this.#player1?.send(data);
-        this.#player2?.send(data);
+        for (const player of this.players) {
+            player?.send(data);
+        }
     }
 
     #sendUpdate () {
@@ -273,13 +272,13 @@ class Room extends EventEmitter {
                 continue;
             }
             
-            const ships = player.ships.map(s => s.toObject());
+            const ships = player.ships.map(s => s.getRect());
     
             const data = {
                 isYourTurn: player === playerTurn,
                 yourShips: ships,
                 room: roomData,
-                ship: player.actualShip,
+                ship: player.shipCursor,
                 type: "room-update"
             }
     

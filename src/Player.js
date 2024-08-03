@@ -1,14 +1,10 @@
 class Player {
-    #actualShip;
     #wsClient;
     #name;
     #ready = false;
+    #shipCursor;
     #ships = [];
     #shots = [];
-
-    get actualShip () {
-        return this.#actualShip;
-    }
 
     get wsClient () {
         return this.#wsClient;
@@ -20,6 +16,10 @@ class Player {
 
     get ready () {
         return this.#ready;
+    }
+
+    get shipCursor () {
+        return this.#shipCursor;
     }
     
     get ships () {
@@ -38,13 +38,13 @@ class Player {
         this.#wsClient = wsClient;
         this.#name = name;
     }
-
-    setActualShip (actualShip) {
-        this.#actualShip = actualShip;
-    }
-
+    
     setReady (ready) {
         this.#ready = ready;
+    }
+
+    setShipCursor (shipCursor) {
+        this.#shipCursor = shipCursor;
     }
 
     send (data) {
